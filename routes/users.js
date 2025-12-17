@@ -1,3 +1,8 @@
+// Listar todos os usuários de todos os tenants (apenas para super_admin)
+router.get('/all', authenticate, authorize('super_admin'), async (req, res) => {
+  const [rows] = await pool.query('SELECT id, name, email, role, is_active, tenant_id FROM users');
+  res.json(rows);
+});
 import express from 'express';
 import { pool } from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
