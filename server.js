@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
 import { pool } from './db.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
@@ -16,6 +17,7 @@ import virtualRoomRoutes from './routes/virtualRooms.js';
 dotenv.config();
 
 const app = express();
+app.use(cors()); // Adiciona o middleware do CORS
 app.use(express.json());
 
 app.get('/health', (req, res) => {
