@@ -16,6 +16,17 @@ import virtualRoomRoutes from './routes/virtualRooms.js';
 import tenantRoutes from './routes/tenants.js';
 import clinicalToolsRoutes from './routes/clinicalTools.js';
 import userPreferencesRoutes from './routes/userPreferences.js';
+import productRoutes from './routes/products.js';
+import comandaRoutes from './routes/comandas.js';
+import peiRoutes from './routes/pei.js';
+import neuroAssessmentRoutes from './routes/neuroAssessments.js';
+import documentRoutes from './routes/documents.js';
+import permissionRoutes from './routes/permissions.js';
+import reportRoutes from './routes/reports.js';
+import messageRoutes from './routes/messages.js';
+import notificationRoutes from './routes/notifications.js';
+import uploadRoutes from './routes/uploads.js';
+import publicBookingRoutes from './routes/publicBooking.js';
 
 dotenv.config();
 
@@ -51,6 +62,17 @@ app.use('/payments', paymentRoutes);
 app.use('/virtual-rooms', virtualRoomRoutes);
 app.use('/clinical-tools', clinicalToolsRoutes);
 app.use('/user-preferences', userPreferencesRoutes);
+app.use('/products', productRoutes);
+app.use('/comandas', comandaRoutes);
+app.use('/pei', peiRoutes);
+app.use('/neuro-assessments', neuroAssessmentRoutes);
+app.use('/documents', documentRoutes);
+app.use('/permissions', permissionRoutes);
+app.use('/reports', reportRoutes);
+app.use('/messages', messageRoutes);
+app.use('/notifications', notificationRoutes);
+app.use('/uploads', uploadRoutes);
+app.use('/public-booking', publicBookingRoutes);
 
 // erro 404 simples
 app.use((req, res) => {
