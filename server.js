@@ -14,6 +14,7 @@ import medicalRecordRoutes from './routes/medicalRecords.js';
 import paymentRoutes from './routes/payments.js';
 import virtualRoomRoutes from './routes/virtualRooms.js';
 import tenantRoutes from './routes/tenants.js';
+import clinicalToolsRoutes from './routes/clinicalTools.js';
 
 dotenv.config();
 
@@ -47,6 +48,7 @@ app.use('/forms', formRoutes);
 app.use('/medical-records', medicalRecordRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/virtual-rooms', virtualRoomRoutes);
+app.use('/clinical-tools', clinicalToolsRoutes);
 
 // erro 404 simples
 app.use((req, res) => {
