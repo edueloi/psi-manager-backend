@@ -13,6 +13,7 @@ import formRoutes from './routes/forms.js';
 import medicalRecordRoutes from './routes/medicalRecords.js';
 import paymentRoutes from './routes/payments.js';
 import virtualRoomRoutes from './routes/virtualRooms.js';
+import tenantRoutes from './routes/tenants.js';
 
 dotenv.config();
 
@@ -33,11 +34,10 @@ app.get('/health/db', async (req, res) => {
   }
 });
 
-
-
 // rotas
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
+app.use('/tenants', tenantRoutes);
 app.use('/patients', patientRoutes);
 app.use('/services', serviceRoutes);
 app.use('/packages', packageRoutes);
