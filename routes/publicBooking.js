@@ -83,13 +83,113 @@ router.get('/requests', authenticate, async (req, res) => {
 
 router.put('/requests/:id', authenticate, async (req, res) => {
   const data = req.body || {};
-  const [result] = await pool.query(
-    `UPDATE public_booking_requests SET status = ?
-     WHERE id = ?`,
-    [data.status ?? 'pending', req.params.id]
+  const [requests] = await pool.query(
+    `SELECT r.*, p.tenant_id, p.settings
+     FROM public_booking_requests r
+     JOIN public_booking_profiles p ON p.id = r.profile_id
+     WHERE r.id = ?
+     LIMIT 1`,
+    [req.params.id]
   );
-  if (result.affectedRows === 0) return res.status(404).json({ error: 'Solicitacao nao encontrada' });
-  res.json({ message: 'Solicitacao atualizada' });
+  if (!requests.length) return res.status(404).json({ error: 'Solicitacao nao encontrada' });
+
+  const request = requests[0];
+  let settings = {};
+  if (request.settings) {
+    try {
+      settings = JSON.parse(request.settings);
+    } catch {
+      settings = {};
+    }
+  }
+
+  const newStatus = data.status ?? 'pending';
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      `UPDATE public_booking_requests SET status = ?
+       WHERE id = ?`,
+      [newStatus, req.params.id]
+    );
+    if (result.affectedRows === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Solicitacao nao encontrada' });
+    }
+
+    if (newStatus === 'approved') {
+      const appointmentDate = data.appointment_date ?? request.preferred_date;
+      const psychologistId = data.psychologist_id ?? settings.default_psychologist_id;
+      const serviceId = data.service_id ?? settings.default_service_id ?? null;
+      const durationMinutes = data.duration_minutes ?? settings.default_duration_minutes ?? 50;
+      const modality = data.modality ?? settings.default_modality ?? 'presencial';
+
+      if (!appointmentDate) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'appointment_date e obrigatorio para aprovar' });
+      }
+      if (!psychologistId) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'psychologist_id e obrigatorio para aprovar' });
+      }
+
+      let patientId = null;
+      if (request.patient_email) {
+        const [patients] = await conn.query(
+          `SELECT id FROM patients WHERE tenant_id = ? AND email = ? LIMIT 1`,
+          [request.tenant_id, request.patient_email]
+        );
+        if (patients.length) patientId = patients[0].id;
+      }
+      if (!patientId && request.patient_phone) {
+        const [patients] = await conn.query(
+          `SELECT id FROM patients WHERE tenant_id = ? AND whatsapp = ? LIMIT 1`,
+          [request.tenant_id, request.patient_phone]
+        );
+        if (patients.length) patientId = patients[0].id;
+      }
+      if (!patientId) {
+        const [patientResult] = await conn.query(
+          `INSERT INTO patients
+           (tenant_id, full_name, email, whatsapp, status)
+           VALUES (?, ?, ?, ?, 'ativo')`,
+          [
+            request.tenant_id,
+            request.patient_name,
+            toNull(request.patient_email),
+            toNull(request.patient_phone)
+          ]
+        );
+        patientId = patientResult.insertId;
+      }
+
+      await conn.query(
+        `INSERT INTO appointments
+         (tenant_id, patient_id, psychologist_id, service_id, appointment_date, duration_minutes,
+          status, modality, type, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, 'consulta', ?, ?)`,
+        [
+          request.tenant_id,
+          patientId,
+          psychologistId,
+          toNull(serviceId),
+          appointmentDate,
+          durationMinutes,
+          modality,
+          toNull(request.notes),
+          req.user.user_id
+        ]
+      );
+    }
+
+    await conn.commit();
+    res.json({ message: 'Solicitacao atualizada' });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
 });
 
 // Public endpoints
