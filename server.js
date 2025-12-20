@@ -27,6 +27,8 @@ import messageRoutes from './routes/messages.js';
 import notificationRoutes from './routes/notifications.js';
 import uploadRoutes from './routes/uploads.js';
 import publicBookingRoutes from './routes/publicBooking.js';
+import caseStudyRoutes from './routes/caseStudies.js';
+import docGeneratorRoutes from './routes/docGenerator.js';
 
 dotenv.config();
 
@@ -73,6 +75,8 @@ app.use('/messages', messageRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/uploads', uploadRoutes);
 app.use('/public-booking', publicBookingRoutes);
+app.use('/case-studies', caseStudyRoutes);
+app.use('/doc-generator', docGeneratorRoutes);
 
 // erro 404 simples
 app.use((req, res) => {
