@@ -52,4 +52,13 @@ router.put('/:id/confirm', authenticate, async (req, res) => {
   res.json({ message: 'Upload confirmado' });
 });
 
+router.delete('/:id', authenticate, async (req, res) => {
+  const [result] = await pool.query(
+    `DELETE FROM uploads WHERE id=? AND tenant_id=?`,
+    [req.params.id, req.user.tenant_id]
+  );
+  if (result.affectedRows === 0) return res.status(404).json({ error: 'Upload nao encontrado' });
+  res.json({ message: 'Upload removido' });
+});
+
 export default router;
