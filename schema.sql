@@ -253,15 +253,27 @@ CREATE TABLE IF NOT EXISTS virtual_rooms (
   code VARCHAR(32) NOT NULL,
   title VARCHAR(255),
   description TEXT,
-  scheduled_start DATETIME,
-  scheduled_end DATETIME,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_virtual_rooms_tenant_id (tenant_id),
-  KEY idx_virtual_rooms_creator_user_id (creator_user_id),
-  CONSTRAINT fk_virtual_rooms_tenant_id FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-  CONSTRAINT fk_virtual_rooms_creator_user_id FOREIGN KEY (creator_user_id) REFERENCES users(id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    scheduled_start DATETIME,
+    scheduled_end DATETIME,
+    patient_id INT NULL,
+    professional_id INT NULL,
+    appointment_id INT NULL,
+    provider ENUM('jitsi','zoom','teams','outro') NULL DEFAULT 'jitsi',
+    link VARCHAR(1024) NULL,
+    expiration_date DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_virtual_rooms_tenant_id (tenant_id),
+    KEY idx_virtual_rooms_creator_user_id (creator_user_id),
+    KEY idx_virtual_rooms_patient_id (patient_id),
+    KEY idx_virtual_rooms_professional_id (professional_id),
+    KEY idx_virtual_rooms_appointment_id (appointment_id),
+    CONSTRAINT fk_virtual_rooms_tenant_id FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_virtual_rooms_creator_user_id FOREIGN KEY (creator_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_virtual_rooms_patient_id FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL,
+    CONSTRAINT fk_virtual_rooms_professional_id FOREIGN KEY (professional_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_virtual_rooms_appointment_id FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Clinical tools (TCC / Schema / Psycho)
 CREATE TABLE IF NOT EXISTS tcc_rpd_records (
