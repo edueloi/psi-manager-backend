@@ -11,6 +11,12 @@ const normalizeTags = (tags) => {
   if (typeof tags === 'string') return tags;
   return JSON.stringify(tags);
 };
+const normalizeJson = (value) => {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+};
 
 const getBoardById = async (boardId, tenantId) => {
   const [rows] = await pool.query(
@@ -224,8 +230,8 @@ router.post('/boards/:boardId/cards', authenticate, async (req, res) => {
 
   const [result] = await pool.query(
     `INSERT INTO case_study_cards
-     (board_id, column_id, patient_id, title, description, tags_json, sort_order, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     (board_id, column_id, patient_id, title, description, tags_json, details_json, sort_order, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       req.params.boardId,
       data.column_id,
@@ -233,6 +239,7 @@ router.post('/boards/:boardId/cards', authenticate, async (req, res) => {
       toNull(data.title),
       toNull(data.description),
       normalizeTags(data.tags),
+      normalizeJson(data.details),
       data.sort_order ?? 0,
       req.user.user_id
     ]
@@ -291,6 +298,7 @@ router.put('/cards/:id', authenticate, async (req, res) => {
       title = ?,
       description = ?,
       tags_json = ?,
+      details_json = ?,
       sort_order = ?
      WHERE id = ?`,
     [
@@ -299,6 +307,7 @@ router.put('/cards/:id', authenticate, async (req, res) => {
       toNull(data.title),
       toNull(data.description),
       normalizeTags(data.tags),
+      normalizeJson(data.details),
       data.sort_order ?? 0,
       req.params.id
     ]
@@ -339,6 +348,10 @@ router.patch('/cards/:id', authenticate, async (req, res) => {
   if (data.tags !== undefined) {
     fields.push('tags_json = ?');
     params.push(normalizeTags(data.tags));
+  }
+  if (data.details !== undefined) {
+    fields.push('details_json = ?');
+    params.push(normalizeJson(data.details));
   }
   if (data.sort_order !== undefined) {
     fields.push('sort_order = ?');

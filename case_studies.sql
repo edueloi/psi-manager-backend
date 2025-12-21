@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS case_study_cards (
   title VARCHAR(255) NULL,
   description TEXT NULL,
   tags_json JSON NULL,
+  details_json JSON NULL,
   sort_order INT NOT NULL DEFAULT 0,
   created_by INT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

@@ -49,6 +49,20 @@ const normalizeRule = (rule) => {
     : [];
   return { freq, interval, byWeekday };
 };
+const normalizeStatusForDb = (value) => {
+  const status = String(value || '').toLowerCase();
+  if (status === 'completed' || status === 'concluido') return 'concluido';
+  if (status === 'cancelled' || status === 'cancelado') return 'cancelado';
+  if (status === 'no-show') return 'no-show';
+  return 'agendado';
+};
+const mapStatusFromDb = (value) => {
+  const status = String(value || '').toLowerCase();
+  if (status === 'concluido') return 'completed';
+  if (status === 'cancelado') return 'cancelled';
+  if (status === 'no-show') return 'no-show';
+  return 'scheduled';
+};
 
 const generateOccurrences = (startDate, rule, count, endDate) => {
   const occurrences = [];
@@ -122,26 +136,32 @@ router.get('/', authenticate, async (req, res) => {
   });
 
   const [rows] = await pool.query(
-    `SELECT a.*, p.full_name AS patient_name, u.name AS psychologist_name, s.name AS service_name
+    `SELECT a.*,
+            COALESCE(p.full_name, a.patient_name_text) AS patient_name,
+            COALESCE(u.name, a.professional_name_text) AS psychologist_name,
+            s.name AS service_name
      FROM appointments a
      LEFT JOIN patients p ON p.id = a.patient_id
-     LEFT JOIN users u ON u.id = a.psychologist_id
+     LEFT JOIN users u ON u.id = a.professional_id
      LEFT JOIN services s ON s.id = a.service_id
      WHERE ${whereSql}
      ORDER BY a.appointment_date ASC`,
     params
   );
 
-  res.json(rows);
+  res.json(rows.map((row) => ({ ...row, status: mapStatusFromDb(row.status) })))
 });
 
 // Buscar por ID
 router.get('/:id', authenticate, async (req, res) => {
   const [rows] = await pool.query(
-    `SELECT a.*, p.full_name AS patient_name, u.name AS psychologist_name, s.name AS service_name
+    `SELECT a.*,
+            COALESCE(p.full_name, a.patient_name_text) AS patient_name,
+            COALESCE(u.name, a.professional_name_text) AS psychologist_name,
+            s.name AS service_name
      FROM appointments a
      LEFT JOIN patients p ON p.id = a.patient_id
-     LEFT JOIN users u ON u.id = a.psychologist_id
+     LEFT JOIN users u ON u.id = a.professional_id
      LEFT JOIN services s ON s.id = a.service_id
      WHERE a.id = ? AND a.tenant_id = ?
      LIMIT 1`,
@@ -149,7 +169,7 @@ router.get('/:id', authenticate, async (req, res) => {
   );
 
   if (!rows.length) return res.status(404).json({ error: 'Agendamento nǜo encontrado' });
-  res.json(rows[0]);
+  res.json({ ...rows[0], status: mapStatusFromDb(rows[0].status) });
 });
 
 // Criar agendamento (com recorrǭncia opcional)
@@ -160,10 +180,9 @@ router.post('/', authenticate, async (req, res) => {
   const recurrenceCount = data.recurrence_count ? Number(data.recurrence_count) : null;
   const recurrenceEndDate = data.recurrence_end_date || null;
 
-  if (!data.patient_id || !data.psychologist_id || !appointmentDate) {
-    return res.status(400).json({ error: 'Campos obrigatǭrios: patient_id, psychologist_id, appointment_date' });
+  if (!appointmentDate) {
+    return res.status(400).json({ error: 'Campos obrigatorios: appointment_date' });
   }
-
   const occurrences = generateOccurrences(
     appointmentDate,
     rule,
@@ -177,18 +196,20 @@ router.post('/', authenticate, async (req, res) => {
 
     const [result] = await conn.query(
       `INSERT INTO appointments (
-        tenant_id, patient_id, psychologist_id, service_id, appointment_date, duration_minutes,
-        status, modality, type, notes, meeting_url, recurrence_rule, recurrence_end_date,
-        recurrence_count, parent_appointment_id, recurrence_index, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tenant_id, patient_id, patient_name_text, professional_id, professional_name_text, service_id,
+        appointment_date, duration_minutes, status, modality, type, notes, meeting_url, recurrence_rule,
+        recurrence_end_date, recurrence_count, parent_appointment_id, recurrence_index, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.user.tenant_id,
-        data.patient_id,
-        data.psychologist_id,
+        toNull(data.patient_id),
+        toNull(data.patient_name_text),
+        toNull(data.professional_id ?? data.psychologist_id),
+        toNull(data.professional_name_text),
         toNull(data.service_id),
         appointmentDate,
         data.duration_minutes ?? 50,
-        data.status ?? 'scheduled',
+        normalizeStatusForDb(data.status),
         data.modality ?? 'presencial',
         data.type ?? 'consulta',
         toNull(data.notes),
@@ -209,17 +230,20 @@ router.post('/', authenticate, async (req, res) => {
       const occurrenceDate = formatDateTimeLocal(occurrences[i]);
       const [childResult] = await conn.query(
         `INSERT INTO appointments (
-          tenant_id, patient_id, psychologist_id, service_id, appointment_date, duration_minutes,
-          status, modality, type, notes, meeting_url, parent_appointment_id, recurrence_index, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tenant_id, patient_id, patient_name_text, professional_id, professional_name_text, service_id,
+          appointment_date, duration_minutes, status, modality, type, notes, meeting_url,
+          parent_appointment_id, recurrence_index, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           req.user.tenant_id,
-          data.patient_id,
-          data.psychologist_id,
+          toNull(data.patient_id),
+          toNull(data.patient_name_text),
+          toNull(data.professional_id ?? data.psychologist_id),
+          toNull(data.professional_name_text),
           toNull(data.service_id),
           occurrenceDate,
           data.duration_minutes ?? 50,
-          data.status ?? 'scheduled',
+          normalizeStatusForDb(data.status),
           data.modality ?? 'presencial',
           data.type ?? 'consulta',
           toNull(data.notes),
@@ -263,16 +287,19 @@ router.put('/:id', authenticate, async (req, res) => {
 
   await pool.query(
     `UPDATE appointments SET
-      patient_id = ?, psychologist_id = ?, service_id = ?, appointment_date = ?,
-      duration_minutes = ?, status = ?, modality = ?, type = ?, notes = ?, meeting_url = ?
+      patient_id = ?, patient_name_text = ?, professional_id = ?, professional_name_text = ?,
+      service_id = ?, appointment_date = ?, duration_minutes = ?, status = ?, modality = ?, type = ?,
+      notes = ?, meeting_url = ?
      WHERE tenant_id = ? AND (${whereClause})`,
     [
-      data.patient_id,
-      data.psychologist_id,
+      toNull(data.patient_id),
+      toNull(data.patient_name_text),
+      toNull(data.professional_id ?? data.psychologist_id),
+      toNull(data.professional_name_text),
       toNull(data.service_id),
       data.appointment_date,
       data.duration_minutes ?? 50,
-      data.status ?? 'scheduled',
+      normalizeStatusForDb(data.status),
       data.modality ?? 'presencial',
       data.type ?? 'consulta',
       toNull(data.notes),
@@ -316,3 +343,9 @@ router.delete('/:id', authenticate, async (req, res) => {
 });
 
 export default router;
+
+
+
+
+
+
