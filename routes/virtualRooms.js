@@ -37,6 +37,14 @@ const insertSystemMessage = async (roomId, tenantId, text) => {
   );
 };
 
+const insertTranscript = async (roomId, tenantId, role, name, text) => {
+  await pool.query(
+    `INSERT INTO virtual_room_transcripts (room_id, tenant_id, speaker_role, speaker_name, text)
+     VALUES (?, ?, ?, ?, ?)`,
+    [roomId, tenantId, role, name, text]
+  );
+};
+
 // Listar todas as salas virtuais do tenant
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -143,6 +151,62 @@ router.post('/public/:code/leave', async (req, res) => {
     );
     await insertSystemMessage(room.id, room.tenant_id, `${participant.name} saiu da sala.`);
     res.json({ status: 'left' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: listar transcricao
+router.get('/:code/transcripts', authenticate, async (req, res) => {
+  try {
+    const since = Number(req.query.since || 0);
+    const room = await getRoomByCode(req.params.code);
+    if (!room || room.tenant_id !== req.user.tenant_id) {
+      return res.status(404).json({ error: 'Sala virtual nao encontrada' });
+    }
+    const [rows] = await pool.query(
+      `SELECT id, speaker_role, speaker_name, text, created_at
+       FROM virtual_room_transcripts
+       WHERE room_id = ? AND id > ?
+       ORDER BY id ASC
+       LIMIT 500`,
+      [room.id, since]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: enviar transcricao
+router.post('/:code/transcripts', authenticate, async (req, res) => {
+  try {
+    const { text, speaker_name } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'text e obrigatorio' });
+    const room = await getRoomByCode(req.params.code);
+    if (!room || room.tenant_id !== req.user.tenant_id) {
+      return res.status(404).json({ error: 'Sala virtual nao encontrada' });
+    }
+    await insertTranscript(room.id, room.tenant_id, 'host', speaker_name || 'Profissional', text);
+    res.status(201).json({ status: 'ok' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public: enviar transcricao
+router.post('/public/:code/transcripts', async (req, res) => {
+  try {
+    const { token, text, speaker_name } = req.body || {};
+    if (!token || !text) return res.status(400).json({ error: 'token e text sao obrigatorios' });
+    const room = await getRoomByCode(req.params.code);
+    if (!room) return res.status(404).json({ error: 'Sala virtual nao encontrada' });
+    const participant = await getParticipantByToken(token);
+    if (!participant || participant.room_id !== room.id) {
+      return res.status(404).json({ error: 'Participante nao encontrado' });
+    }
+    await insertTranscript(room.id, room.tenant_id, 'guest', speaker_name || participant.name, text);
+    res.status(201).json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
