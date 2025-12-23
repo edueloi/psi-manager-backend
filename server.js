@@ -29,6 +29,7 @@ import uploadRoutes from './routes/uploads.js';
 import publicBookingRoutes from './routes/publicBooking.js';
 import caseStudyRoutes from './routes/caseStudies.js';
 import docGeneratorRoutes from './routes/docGenerator.js';
+import profileRoutes from './routes/profile.js';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/uploads', uploadRoutes);
 app.use('/public-booking', publicBookingRoutes);
 app.use('/case-studies', caseStudyRoutes);
 app.use('/doc-generator', docGeneratorRoutes);
+app.use('/profile', profileRoutes);
 
 // erro 404 simples
 app.use((req, res) => {

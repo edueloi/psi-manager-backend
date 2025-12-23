@@ -26,7 +26,14 @@ const loadForm = async (tenantId, id) => {
 
 const loadPublicFormByHash = async (hash) => {
   const [forms] = await pool.query(
-    `SELECT * FROM clinical_forms WHERE hash = ? AND is_global = 1 LIMIT 1`,
+    `SELECT f.*, u.name AS professional_name, p.crp AS professional_crp, p.specialty AS professional_specialty,
+            p.company_name AS profile_company_name, p.clinic_logo_url, p.cover_url, t.company_name AS tenant_company_name
+     FROM clinical_forms f
+     LEFT JOIN users u ON u.id = f.creator_user_id
+     LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = f.tenant_id
+     LEFT JOIN tenants t ON t.id = f.tenant_id
+     WHERE f.hash = ?
+     LIMIT 1`,
     [hash]
   );
   if (!forms.length) return null;
@@ -39,7 +46,15 @@ const loadPublicFormByHash = async (hash) => {
     `SELECT * FROM clinical_form_interpretations WHERE form_id = ? ORDER BY id ASC`,
     [form.id]
   );
-  return { ...form, questions, interpretations };
+  const branding = {
+    professional_name: form.professional_name || null,
+    professional_crp: form.professional_crp || null,
+    professional_specialty: form.professional_specialty || null,
+    clinic_name: form.profile_company_name || form.tenant_company_name || null,
+    clinic_logo_url: form.clinic_logo_url || null,
+    cover_url: form.cover_url || null
+  };
+  return { ...form, questions, interpretations, branding };
 };
 
 router.get('/', authenticate, async (req, res) => {
@@ -51,6 +66,60 @@ router.get('/', authenticate, async (req, res) => {
     [req.user.tenant_id]
   );
   res.json(rows);
+});
+
+
+// Public form by hash (no auth)
+router.get('/public/:hash', async (req, res) => {
+  const form = await loadPublicFormByHash(req.params.hash);
+  if (!form) return res.status(404).json({ error: 'Formulario nao encontrado' });
+  res.json(form);
+});
+
+router.post('/public/:hash/responses', async (req, res) => {
+  const data = req.body || {};
+  const answersPayload = data.answers_json ?? data.answers;
+  if (!answersPayload) {
+    return res.status(400).json({ error: 'answers_json e obrigatorio' });
+  }
+
+  const respondentName = data.respondent_name ?? data.respondentName ?? data.name ?? null;
+  const respondentEmail = data.respondent_email ?? data.respondentEmail ?? data.email ?? null;
+  const respondentPhone = data.respondent_phone ?? data.respondentPhone ?? data.phone ?? null;
+
+  const form = await loadPublicFormByHash(req.params.hash);
+  if (!form) return res.status(404).json({ error: 'Formulario nao encontrado' });
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      `INSERT INTO clinical_form_responses
+       (form_id, tenant_id, patient_id, respondent_name, respondent_email, respondent_phone, answers_json, score)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        form.id,
+        form.tenant_id,
+        null,
+        toNull(respondentName),
+        toNull(respondentEmail),
+        toNull(respondentPhone),
+        JSON.stringify(answersPayload),
+        toNull(data.score)
+      ]
+    );
+    await conn.query(
+      `UPDATE clinical_forms SET response_count = response_count + 1 WHERE id = ?`,
+      [form.id]
+    );
+    await conn.commit();
+    res.status(201).json({ message: 'Resposta registrada', id: result.insertId });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
 });
 
 router.get('/:id', authenticate, async (req, res) => {
@@ -72,8 +141,8 @@ router.post('/', authenticate, async (req, res) => {
     await conn.beginTransaction();
     const [result] = await conn.query(
       `INSERT INTO clinical_forms
-       (tenant_id, creator_user_id, title, hash, description, is_global, response_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (tenant_id, creator_user_id, title, hash, description, is_global, response_count, theme_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.user.tenant_id,
         req.user.user_id,
@@ -81,7 +150,8 @@ router.post('/', authenticate, async (req, res) => {
         hash,
         toNull(data.description),
         data.is_global ?? 0,
-        0
+        0,
+        data.theme ? JSON.stringify(data.theme) : toNull(data.theme_json)
       ]
     );
     const formId = result.insertId;
@@ -145,12 +215,13 @@ router.put('/:id', authenticate, async (req, res) => {
     await conn.beginTransaction();
     const [result] = await conn.query(
       `UPDATE clinical_forms SET
-        title=?, description=?, is_global=?
+        title=?, description=?, is_global=?, theme_json=?
        WHERE id=? AND tenant_id=?`,
       [
         data.title,
         toNull(data.description),
         data.is_global ?? 0,
+        data.theme ? JSON.stringify(data.theme) : toNull(data.theme_json),
         req.params.id,
         req.user.tenant_id
       ]
@@ -273,58 +344,4 @@ router.post('/:id/responses', authenticate, async (req, res) => {
     conn.release();
   }
 });
-
-// Public form by hash (no auth)
-router.get('/public/:hash', async (req, res) => {
-  const form = await loadPublicFormByHash(req.params.hash);
-  if (!form) return res.status(404).json({ error: 'Formulario nao encontrado' });
-  res.json(form);
-});
-
-router.post('/public/:hash/responses', async (req, res) => {
-  const data = req.body || {};
-  const answersPayload = data.answers_json ?? data.answers;
-  if (!answersPayload) {
-    return res.status(400).json({ error: 'answers_json e obrigatorio' });
-  }
-
-  const respondentName = data.respondent_name ?? data.respondentName ?? data.name ?? null;
-  const respondentEmail = data.respondent_email ?? data.respondentEmail ?? data.email ?? null;
-  const respondentPhone = data.respondent_phone ?? data.respondentPhone ?? data.phone ?? null;
-
-  const form = await loadPublicFormByHash(req.params.hash);
-  if (!form) return res.status(404).json({ error: 'Formulario nao encontrado' });
-
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const [result] = await conn.query(
-      `INSERT INTO clinical_form_responses
-       (form_id, tenant_id, patient_id, respondent_name, respondent_email, respondent_phone, answers_json, score)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        form.id,
-        form.tenant_id,
-        null,
-        toNull(respondentName),
-        toNull(respondentEmail),
-        toNull(respondentPhone),
-        JSON.stringify(answersPayload),
-        toNull(data.score)
-      ]
-    );
-    await conn.query(
-      `UPDATE clinical_forms SET response_count = response_count + 1 WHERE id = ?`,
-      [form.id]
-    );
-    await conn.commit();
-    res.status(201).json({ message: 'Resposta registrada', id: result.insertId });
-  } catch (err) {
-    await conn.rollback();
-    res.status(500).json({ error: err.message });
-  } finally {
-    conn.release();
-  }
-});
-
 export default router;
